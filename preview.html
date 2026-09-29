@@ -1,0 +1,1065 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UI 流程 AI 化 · 流程讲解</title>
+<style>
+/* ============================================================
+   Design tokens
+   ============================================================ */
+:root{
+  /* color — text（中性墨色，呼应参考图的 #000000） */
+  --text-strong:#0E1730;
+  --text-body:#2E3B57;
+  --text-muted:#5A6885;
+  --text-faint:#8A95AC;
+
+  /* color — brand（蓝紫主色，对齐参考图标注的 #5F79FF） */
+  --brand-900:#141C4A;
+  --brand-800:#2A3AA8;
+  --brand-700:#3B4FD4;
+  --brand-600:#5F79FF;   /* 参考图原色：蓝紫块 / 填充 */
+  --brand-500:#6F86FF;
+  --brand-400:#9AA9FF;
+  --brand-200:#D3DAFF;
+  --brand-100:#E7EBFF;
+  --brand-050:#F2F5FF;
+  --sky-500:#67A9FC;     /* 浅雾蓝：辅助色 */
+
+  /* color — 装饰色（参考图底部色条 + 黄色 Active chip） */
+  --deco-red:#EB4425;
+  --deco-yellow:#FFE95C;
+  --deco-ink:#0B0B0B;
+  --deco-blue:#5F79FF;
+
+  /* color — surface（雾蓝底；卡片一律纯白、无描边） */
+  --surface:#FFFFFF;
+  --surface-sunken:#E7EDF9;
+  --surface-veil:#DCE4F3;
+  --border:#E3E9F6;
+  --border-strong:#C6D2EA;
+  --border-accent:#C9D4FF;
+
+  /* evidence badge — 参考图那枚黄色 chip */
+  --ai-fg:#141414;
+  --ai-bg:#FFE95C;
+
+  /* card（参考图的框：无边框大圆角白卡 + 柔和投影） */
+  --r-card:22px;
+  --e-card:0 10px 30px -8px rgba(36,52,116,.16),0 2px 6px rgba(36,52,116,.05);
+  --e-card-hi:0 18px 46px -12px rgba(36,52,116,.26),0 3px 10px rgba(36,52,116,.08);
+
+  /* spacing — 8pt grid */
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px;
+  --sp-5:24px; --sp-6:32px; --sp-7:48px; --sp-8:64px; --sp-9:96px;
+
+  /* radius */
+  --r-xs:6px; --r-sm:8px; --r-md:12px; --r-lg:16px; --r-full:999px;
+
+  /* type scale — 1.25 modular；--fs 为全局字号系数，正文随它整体放大 */
+  --fs:1.24;
+  --t-2xs:calc(13px * var(--fs));
+  --t-xs: calc(14px * var(--fs));
+  --t-sm: calc(15px * var(--fs));
+  --t-base:calc(16px * var(--fs));
+  --t-md: calc(18px * var(--fs));
+  --t-lg: calc(21px * var(--fs));
+  --t-xl: 28px; --t-2xl:34px;
+  --t-3xl:42px; --t-hero:78px;
+
+  /* elevation */
+  --e-1:0 1px 2px rgba(28,52,84,.06);
+  --e-2:0 6px 20px rgba(28,52,84,.09);
+  --e-3:0 16px 48px rgba(20,40,70,.22);
+
+  /* z-index scale */
+  --z-base:0; --z-rail:20; --z-chrome:30; --z-top:50;
+
+  --dur-fast:.16s;
+  --dur-base:.3s;
+}
+
+*{margin:0;padding:0;box-sizing:border-box;}
+html,body{height:100%;}
+body{
+  font-family:"PingFang SC","Microsoft YaHei","Hiragino Sans GB","Source Han Sans SC",-apple-system,sans-serif;
+  background:var(--surface-veil);color:var(--text-body);
+  -webkit-font-smoothing:antialiased;line-height:1.6;overflow:hidden;
+}
+
+/* ---------- 16:9 stage ---------- */
+.stage{
+  position:absolute;left:50%;top:50%;width:1920px;height:1080px;
+  transform:translate(-50%,-50%) scale(var(--k,1));transform-origin:center center;
+  background:var(--surface-sunken);overflow:hidden;box-shadow:var(--e-3);
+}
+/* 导出/校验模式：冻结一切过渡与动画，避免抓到中间态 */
+.stage.still,.stage.still *{transition:none !important;animation:none !important;}
+/* 内页：纯色底 + 线框网格（不用底图，避免蓝方格和白卡抢视觉） */
+.slide{
+  position:absolute;inset:0;display:flex;flex-direction:column;
+  padding:var(--sp-9) 96px 96px 288px;
+  color:var(--text-body);
+  background:linear-gradient(170deg,#EDF0F7 0%,#E5EAF3 100%);
+  opacity:0;visibility:hidden;transition:opacity var(--dur-base) ease,visibility var(--dur-base);
+}
+.slide.active{opacity:1;visibility:visible;}
+/* 线框网格（内页唯一纹理） */
+.slide::before{
+  content:"";position:absolute;inset:0;pointer-events:none;z-index:1;
+  background:
+    repeating-linear-gradient(90deg,rgba(32,52,112,.072) 0 1px,transparent 1px 78px),
+    repeating-linear-gradient(0deg,rgba(32,52,112,.072) 0 1px,transparent 1px 78px);
+}
+/* 封面：底图完整呈现，仅左侧做白色柔化保证文字可读 */
+.slide.cover{padding-left:288px;color:var(--text-strong);background:#edf3f8;}
+.slide.cover .inner{justify-content:center;}
+
+/* 封面底部色条（取自参考图底部的红 / 黄 / 墨） */
+.cover .swatch{display:flex;gap:9px;margin-top:var(--sp-6);}
+.cover .swatch i{display:block;width:52px;height:7px;border-radius:var(--r-full);}
+.cover .swatch i:nth-child(1){background:var(--deco-red);}
+.cover .swatch i:nth-child(2){background:var(--deco-yellow);}
+.cover .swatch i:nth-child(3){background:var(--deco-ink);}
+.inner{max-width:1536px;width:100%;display:flex;flex-direction:column;flex:1;min-height:0;position:relative;z-index:2;}
+
+/* ---------- focus (keyboard only) ---------- */
+.rail-item:focus-visible,.navbtn:focus-visible,.step.pick:focus-visible,.cstep:focus-visible{
+  outline:2px solid var(--brand-600);outline-offset:2px;border-radius:var(--r-sm);
+}
+
+/* ---------- left rail ---------- */
+.rail{
+  position:absolute;left:0;top:0;bottom:0;width:240px;z-index:var(--z-rail);
+  display:flex;flex-direction:column;justify-content:center;gap:var(--sp-2);
+  padding-left:56px;border-right:1px solid var(--border);
+}
+.rail-item{
+  cursor:pointer;font-size:var(--t-sm);color:var(--text-muted);
+  padding:var(--sp-1) 0;display:flex;align-items:center;gap:var(--sp-3);
+  transition:color var(--dur-fast),filter var(--dur-fast);
+}
+.rail-item:hover{filter:brightness(.82);}
+.rail-item .dot{
+  width:7px;height:7px;border-radius:var(--r-full);background:var(--border-strong);
+  flex:0 0 auto;transition:background var(--dur-fast) ease,transform var(--dur-fast) ease;
+}
+.rail-item.on{color:var(--text-strong);font-weight:500;}
+.rail-item.on .dot{background:var(--deco-red);transform:scale(1.3);}
+
+/* ---------- chrome ---------- */
+.bar{position:absolute;left:0;right:0;bottom:0;height:4px;background:rgba(28,52,84,.08);z-index:var(--z-chrome);}
+/* 进度条直接用参考图底部那三色条（红｜黄｜蓝紫，硬边拼接） */
+.bar .fill{height:100%;width:20%;border-radius:0 var(--r-full) var(--r-full) 0;
+  background:linear-gradient(90deg,var(--deco-red) 0 33%,var(--deco-yellow) 33% 66%,var(--brand-600) 66% 100%);
+  transition:width var(--dur-base) ease;}
+.pager{position:absolute;right:48px;bottom:var(--sp-6);z-index:var(--z-chrome);display:flex;align-items:center;gap:var(--sp-4);}
+.pager .n{
+  font-size:var(--t-sm);color:var(--text-muted);letter-spacing:.06em;
+  font-variant-numeric:tabular-nums;min-width:52px;text-align:right;
+}
+.navbtn{
+  cursor:pointer;width:48px;height:48px;border-radius:var(--r-full);
+  border:0;background:var(--surface);box-shadow:var(--e-card);
+  display:flex;align-items:center;justify-content:center;
+  transition:filter var(--dur-fast),box-shadow var(--dur-fast);
+}
+.navbtn:hover{filter:brightness(.97);box-shadow:var(--e-card-hi);}
+.navbtn span{display:block;width:9px;height:9px;border-top:2px solid var(--brand-800);border-right:2px solid var(--brand-800);}
+.navbtn.prev span{transform:rotate(-135deg);margin-left:4px;}
+.navbtn.next span{transform:rotate(45deg);margin-right:4px;}
+.navbtn[aria-disabled="true"]{opacity:.3;pointer-events:none;}
+
+/* ---------- type ---------- */
+.eyebrow{font-size:var(--t-sm);letter-spacing:.22em;text-transform:uppercase;color:#7488A0;margin-bottom:var(--sp-6);}
+/* 中文抬头：取消全大写与宽字距，否则中文会被拉得很散 */
+.eyebrow.cn{font-size:var(--t-md);letter-spacing:.06em;text-transform:none;color:var(--brand-700);font-weight:600;}
+/* 封面：底图之上，主/副标题放大 */
+.cover h1{font-size:96px;font-weight:600;line-height:1.18;letter-spacing:.01em;margin-bottom:var(--sp-5);color:var(--text-strong);}
+.cover .lead{font-size:calc(28px * var(--fs));color:var(--text-body);max-width:1100px;line-height:1.6;}
+/* 封面落款：白色胶囊底框 */
+.cover .sign{
+  align-self:flex-start;display:inline-flex;align-items:center;
+  font-size:var(--t-md);color:var(--text-body);font-weight:600;
+  letter-spacing:.12em;background:#fff;border-radius:var(--r-full);
+  padding:9px 24px;margin-top:var(--sp-5);
+  box-shadow:0 8px 22px -8px rgba(36,52,116,.30);
+}
+/* 封面上是浅灰蓝底，提示行比默认的 faint 再深一档 */
+.cover .hint{color:var(--text-muted);}
+.sec-no{
+  align-self:flex-start;font-size:var(--t-sm);font-weight:600;color:#fff;
+  background:linear-gradient(135deg,var(--brand-600) 0%,var(--brand-800) 100%);
+  border-radius:var(--r-sm);padding:4px var(--sp-3);
+  margin-bottom:var(--sp-3);letter-spacing:.06em;
+  box-shadow:0 5px 14px -4px rgba(95,121,255,.50);
+}
+h2{font-size:var(--t-3xl);font-weight:600;color:var(--text-strong);line-height:1.3;letter-spacing:.01em;}
+p.sub{font-size:var(--t-md);color:var(--text-body);margin-top:var(--sp-3);max-width:1280px;line-height:1.72;}
+.hint{font-size:var(--t-sm);color:var(--text-faint);margin-top:var(--sp-5);}
+
+.zone{flex:1;display:flex;flex-direction:column;justify-content:center;min-height:0;}
+
+/* ---------- stepper ---------- */
+.steps{display:grid;gap:var(--sp-3);margin-top:var(--sp-5);}
+.steps.col5{grid-template-columns:repeat(5,1fr);}
+.steps.col7{grid-template-columns:repeat(7,1fr);}
+/* 卡片语言：无描边、大圆角、柔和投影（对齐参考图的白色圆角卡） */
+.step{
+  background:var(--surface);border:0;border-radius:var(--r-card);
+  padding:var(--sp-5) var(--sp-4) var(--sp-4);position:relative;overflow:hidden;
+  display:flex;flex-direction:column;   /* 让「产出」行在卡片底部对齐 */
+  box-shadow:var(--e-card);
+  transition:box-shadow var(--dur-fast),filter var(--dur-fast);
+}
+/* 卡顶纯色细条（参考图是硬边色块，不做渐变，避免中点混灰） */
+.step::before{
+  content:"";position:absolute;left:0;right:0;top:0;height:4px;
+  background:var(--brand-600);
+}
+.step.pick{cursor:pointer;}
+.step.pick:hover{box-shadow:var(--e-card-hi);}
+.step.sel{background:var(--brand-050);box-shadow:var(--e-card-hi);}
+.step.sel::before{background:var(--deco-red);}
+.step .no{display:block;font-size:var(--t-2xs);font-weight:600;color:var(--text-faint);letter-spacing:.1em;margin-bottom:var(--sp-2);}
+.step.sel .no{color:var(--deco-red);}
+.step h3{font-size:var(--t-md);font-weight:600;color:var(--text-strong);margin-bottom:var(--sp-2);line-height:1.4;}
+.steps.col7 .step{padding:var(--sp-4) var(--sp-3) var(--sp-3);}
+.steps.col7 .step h3{font-size:var(--t-base);}
+.step .io{font-size:var(--t-xs);color:var(--text-muted);line-height:1.65;margin-bottom:var(--sp-3);}
+.step .out{
+  margin-top:auto;padding-top:var(--sp-3);border-top:1px solid rgba(95,121,255,.16);
+  font-size:var(--t-xs);color:var(--brand-600);font-weight:600;
+}
+.step.ai{background:linear-gradient(180deg,#FFFFFF 0%,#F6F8FF 100%);}
+/* 真正由 AI 介入的步骤（卡上带 AI 标记）用黄色条；选中的优先级更高，保持红 */
+.step.ai:has(.badge-ai):not(.sel)::before{background:var(--deco-yellow);}
+.step.ai .no{color:var(--brand-600);}
+.badge-ai{
+  position:absolute;top:var(--sp-3);right:var(--sp-3);z-index:1;
+  font-size:var(--t-2xs);font-weight:700;letter-spacing:.08em;
+  color:var(--ai-fg);background:var(--ai-bg);border-radius:var(--r-full);padding:3px 9px;
+  box-shadow:0 4px 10px -3px rgba(20,20,20,.28);
+}
+
+/* ---------- media ---------- */
+.media{margin-top:var(--sp-5);display:flex;flex-direction:column;gap:var(--sp-4);align-items:center;}
+.mi{display:none;width:100%;}
+/* 单图态一律水平居中（figure 是块级，默认会贴左） */
+.mi.on{display:flex;flex-direction:column;align-items:center;}
+.rowimg{display:flex;gap:var(--sp-4);align-items:flex-start;justify-content:center;}
+.rowimg figure{flex:0 0 auto;}
+figure{margin:0;}
+.frame{border-radius:var(--r-card);overflow:hidden;border:0;background:var(--surface);box-shadow:var(--e-card);}
+.frame img{display:block;pointer-events:none;}
+.ph-sm img{height:186px;width:auto;}
+.ph-ref img{height:168px;width:auto;}
+.ph-md img{height:378px;width:auto;}
+.ph-lg img{height:400px;width:auto;}
+figcaption{font-size:var(--t-xs);color:var(--text-muted);margin-top:var(--sp-2);text-align:center;}
+.note{
+  background:var(--surface);border:0;border-left:5px solid var(--brand-600);
+  border-radius:var(--r-card);padding:var(--sp-6) var(--sp-7);max-width:920px;margin:0 auto;
+  box-shadow:var(--e-card);
+}
+.note .ttl{font-size:var(--t-lg);font-weight:600;color:var(--text-strong);margin-bottom:var(--sp-3);}
+.note .tx{font-size:var(--t-base);color:var(--text-body);line-height:1.9;}
+.note strong{color:var(--text-strong);}
+
+/* ---------- compare ---------- */
+.scale{display:flex;align-items:center;gap:var(--sp-4);font-size:var(--t-sm);color:var(--text-muted);margin-top:var(--sp-4);flex-wrap:wrap;}
+.scale .lab{color:var(--text-strong);font-weight:600;}
+.bar2{height:14px;border-radius:var(--r-full);}
+.bar-old{width:400px;background:linear-gradient(90deg,#B4C2D8,#D3DDEC);}
+.bar-new{width:67px;background:linear-gradient(90deg,var(--brand-500),var(--brand-800));box-shadow:0 4px 12px -4px rgba(95,121,255,.60);}
+.tracks{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-5);margin-top:var(--sp-3);}
+.track{background:var(--surface);border:0;border-radius:var(--r-card);padding:var(--sp-5);box-shadow:var(--e-card);}
+.track.tnew{background:linear-gradient(180deg,#FFFFFF 0%,#F4F7FF 100%);box-shadow:var(--e-card-hi);}
+.track-h{display:flex;align-items:baseline;gap:var(--sp-3);margin-bottom:var(--sp-4);}
+.track-h h3{font-size:var(--t-lg);font-weight:600;color:var(--text-strong);}
+.tnew .track-h h3{color:var(--brand-700);}
+.track-h .t{font-size:var(--t-sm);color:var(--text-muted);}
+.cstep{
+  border:0;border-radius:var(--r-md);padding:9px var(--sp-4);
+  margin-bottom:6px;background:rgba(95,121,255,.055);cursor:pointer;
+  transition:background var(--dur-fast),box-shadow var(--dur-fast),filter var(--dur-fast);
+}
+.cstep:hover{filter:brightness(.985);background:rgba(95,121,255,.10);}
+.cstep.on{background:var(--brand-050);box-shadow:0 6px 16px -6px rgba(95,121,255,.42),inset 0 0 0 1.5px var(--brand-500);}
+.cstep .row{display:flex;align-items:center;gap:var(--sp-3);}
+.cstep .idx{
+  flex:0 0 auto;width:1.7em;height:1.7em;border-radius:var(--r-full);
+  background:rgba(95,121,255,.16);color:var(--brand-700);
+  font-size:var(--t-2xs);font-weight:700;
+  display:flex;align-items:center;justify-content:center;
+}
+.cstep.on .idx{background:var(--deco-red);color:#fff;box-shadow:0 4px 10px -3px rgba(235,68,37,.55);}
+.cstep .nm{font-size:var(--t-base);font-weight:500;color:var(--text-body);flex:1;}
+.cstep.on .nm{color:var(--text-strong);font-weight:600;}
+.cstep .dur{font-size:var(--t-xs);color:var(--text-muted);}
+.cstep .det{display:none;margin-top:var(--sp-2);padding-top:var(--sp-2);border-top:1px solid rgba(95,121,255,.16);font-size:var(--t-sm);color:var(--text-muted);line-height:1.7;}
+.cstep.on .det{display:block;}
+.mile{margin-top:var(--sp-3);font-size:var(--t-sm);color:var(--brand-700);font-weight:600;border-left:3px solid var(--brand-600);padding-left:var(--sp-3);}
+.takeaway{
+  margin-top:var(--sp-5);display:flex;align-items:baseline;gap:var(--sp-3);
+  font-size:var(--t-base);color:var(--text-body);line-height:1.7;
+}
+.takeaway::before{
+  content:"";flex:0 0 auto;width:3px;height:1em;border-radius:var(--r-full);
+  background:linear-gradient(180deg,var(--deco-red),var(--brand-600));transform:translateY(.14em);
+}
+
+/* ---------- skills ---------- */
+.skills{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-6);margin-top:var(--sp-6);}
+.skill{position:relative;background:var(--surface);border:0;border-radius:var(--r-card);padding:var(--sp-8) var(--sp-7);box-shadow:var(--e-card);overflow:hidden;}
+/* 卡顶硬边双色条：黄｜蓝紫，呼应参考图底部的色块拼接 */
+.skill::before{content:"";position:absolute;left:0;right:0;top:0;height:5px;background:linear-gradient(90deg,var(--deco-yellow) 0 22%,var(--brand-600) 22% 100%);}
+.skill .tag{display:inline-block;font-size:var(--t-2xs);font-weight:700;letter-spacing:.1em;color:var(--ai-fg);background:var(--ai-bg);border-radius:var(--r-full);padding:4px 12px;margin-bottom:var(--sp-4);box-shadow:0 4px 10px -3px rgba(20,20,20,.25);}
+.skill h3{font-size:var(--t-lg);font-weight:600;color:var(--text-strong);margin-bottom:var(--sp-3);}
+.skill p{font-size:var(--t-sm);color:var(--text-body);line-height:1.78;margin-bottom:var(--sp-5);}
+.skill ul{list-style:none;}
+.skill li{font-size:var(--t-sm);color:var(--text-muted);padding-left:var(--sp-5);position:relative;margin-bottom:var(--sp-4);line-height:1.7;}
+.skill li::before{content:"";position:absolute;left:0;top:10px;width:6px;height:6px;border-radius:var(--r-full);background:linear-gradient(135deg,var(--brand-500),var(--brand-800));}
+
+/* ---------- 待插入截图的插槽 ---------- */
+.slot{width:100%;border-radius:var(--r-md);overflow:hidden;}
+.slot .shot-ph{height:100%;}
+.slot.lg{height:410px;max-width:1180px;margin:0 auto;}
+.slot.md{height:378px;max-width:1020px;margin:0 auto;}
+
+/* ---------- 过程实录：步骤列表 + 大图（点击切换） ---------- */
+.recl{display:grid;grid-template-columns:496px 1fr;gap:var(--sp-7);margin-top:var(--sp-3);align-items:center;}
+.rlist{display:flex;flex-direction:column;gap:var(--sp-2);}
+.ritem{
+  display:flex;align-items:center;gap:var(--sp-4);
+  padding:var(--sp-4) var(--sp-5);border-radius:var(--r-md);
+  border:0;cursor:pointer;
+  transition:background var(--dur-fast),box-shadow var(--dur-fast),filter var(--dur-fast);
+}
+.ritem:hover{filter:brightness(.985);background:rgba(255,255,255,.62);}
+.ritem.on{background:var(--surface);box-shadow:var(--e-card);}
+.ritem .rn{
+  flex:0 0 auto;width:1.8em;height:1.8em;border-radius:var(--r-full);
+  background:rgba(95,121,255,.16);color:var(--brand-700);font-size:var(--t-2xs);font-weight:700;
+  display:flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums;
+}
+.ritem.on .rn{background:var(--deco-red);color:#fff;box-shadow:0 4px 10px -3px rgba(235,68,37,.55);}
+.ritem h4{font-size:var(--t-md);font-weight:600;color:var(--text-body);line-height:1.35;}
+.ritem.on h4{color:var(--text-strong);}
+.rstage{display:flex;flex-direction:column;gap:var(--sp-2);}
+.rmi{display:none;}
+.rmi.on{display:block;}
+.rframe{
+  width:100%;aspect-ratio:16/9;border-radius:var(--r-card);overflow:hidden;
+  border:0;background:var(--surface);box-shadow:var(--e-card);
+}
+.rframe img{display:block;width:100%;height:100%;object-fit:cover;pointer-events:none;}
+/* 宽高比天然的截图（长图 / 横向截图）不裁切，按原比例撑高 */
+.rframe.auto{aspect-ratio:auto;}
+.rframe.auto img{height:auto;object-fit:fill;background:#fff;}
+/* 竖一些的截图：保持 16:9 卡片不变，图整体塞进去不裁切 */
+.rframe.fit img{object-fit:contain;background:#fff;}
+/* 一个步骤里有多张截图时用的 2×2 宫格 */
+.rgrid{
+  display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:12px;
+  width:100%;aspect-ratio:16/9;
+}
+.rgrid .cell{
+  min-width:0;min-height:0;border-radius:var(--r-md);overflow:hidden;
+  border:0;background:var(--surface);box-shadow:0 6px 18px -8px rgba(36,52,116,.20);
+}
+.rgrid .cell img{display:block;width:100%;height:100%;object-fit:contain;background:#fff;pointer-events:none;}
+/* 5 图版式：一张宽的（跨两列）+ 四张页图 */
+.rgrid.t5{grid-template-columns:repeat(3,1fr);grid-template-rows:1fr 1fr;}
+.rgrid .cell.span2{grid-column:span 2;}
+/* 占位框位于 .rframe 白卡内部，所以用深色系 */
+.shot-ph{
+  display:flex;height:100%;flex-direction:column;align-items:center;justify-content:center;gap:4px;
+  border:2px dashed var(--border-strong);border-radius:var(--r-md);
+  color:var(--text-faint);text-align:center;padding:var(--sp-4);line-height:1.5;
+  font-size:var(--t-sm);
+}
+.shot-ph small{font-size:var(--t-xs);opacity:.75;}
+.rmcap{font-size:var(--t-sm);color:var(--text-muted);line-height:1.6;}
+.rmcap strong{color:var(--text-strong);font-weight:600;}
+
+/* ---------- guide（引导上手：编号 runbook） ---------- */
+.guide{display:flex;flex-direction:column;gap:var(--sp-4);margin-top:var(--sp-5);}
+.gstep{
+  display:flex;gap:var(--sp-5);align-items:flex-start;
+  background:var(--surface);border:0;border-radius:var(--r-card);
+  padding:var(--sp-5) var(--sp-6);box-shadow:var(--e-card);
+}
+.gstep .gn{
+  flex:0 0 auto;width:2.1em;height:2.1em;border-radius:var(--r-full);
+  background:linear-gradient(135deg,var(--brand-500),var(--brand-800));color:#fff;
+  font-size:var(--t-base);font-weight:600;
+  display:flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums;
+  box-shadow:0 6px 16px -5px rgba(95,121,255,.70);
+}
+.gstep .gb{flex:1;min-width:0;}
+.gstep h3{font-size:var(--t-md);font-weight:600;color:var(--text-strong);margin-bottom:4px;line-height:1.4;}
+.gstep p{font-size:var(--t-sm);color:var(--text-body);line-height:1.7;}
+.gstep .who{
+  flex:0 0 auto;align-self:center;white-space:nowrap;
+  font-size:var(--t-2xs);font-weight:700;letter-spacing:.06em;
+  color:var(--brand-700);background:var(--brand-100);
+  border-radius:var(--r-full);padding:5px 13px;
+}
+
+@media (prefers-reduced-motion:reduce){
+  .slide,.bar .fill,.rail-item .dot{transition:none !important;}
+}
+</style>
+<style id="presentation-polish">
+/* Original inner-page composition and grid; quieter mist-blue palette. */
+:root{
+ --text-strong:#20364d;--text-body:#3c5067;--text-muted:#61748a;--text-faint:#7c8da2;
+ --brand-900:#253e5b;--brand-800:#3d5e82;--brand-700:#4d7097;--brand-600:#6789be;
+ --brand-500:#7b9ac1;--brand-400:#a1b7d3;--brand-200:#d2dfed;--brand-100:#e3ebf5;--brand-050:#f1f5fa;
+ --sky-500:#8bb4d5;--deco-blue:#6789be;--deco-yellow:#f2ff35;--ai-bg:#f2ff35;--deco-red:#eb4425;--deco-ink:#101317;
+ --surface:#fff;--surface-sunken:#e8eef5;--surface-veil:#dde5ef;
+ --border:#d9e2ee;--border-strong:#bdcddd;--border-accent:#cad9ea;
+ --e-card:0 8px 24px -10px rgba(55,83,116,.13),0 2px 5px rgba(55,83,116,.03);
+ --e-card-hi:0 14px 34px -12px rgba(55,83,116,.21),0 3px 8px rgba(55,83,116,.05);
+}
+.stage{background:#fff;}
+.slide{background:transparent;}
+.slide::before{background:repeating-linear-gradient(90deg,rgba(103,137,190,.065) 0 1px,transparent 1px 78px),repeating-linear-gradient(0deg,rgba(103,137,190,.065) 0 1px,transparent 1px 78px);}
+.slide:not(.cover)::after{content:'';position:absolute;left:288px;bottom:54px;width:108px;height:5px;border-radius:5px;background:linear-gradient(90deg,#eb4425 0 29%,transparent 29% 35%,#f2ff35 35% 64%,transparent 64% 70%,#101317 70%);}
+.slide:not(.cover) h2{color:#526f99;font-weight:650;letter-spacing:-.025em;}
+.slide:not(.cover) p.sub{color:#61748a;}
+.step,.track,.skill,.gstep,.note{background:#f5f7fb;border:1px solid #e6edf5;}
+.step.ai,.track.tnew{background:#f1f5fb;}
+.step.sel{background:#eaf1fa;}
+.ritem.on{background:#edf3fa;}
+.sec-no{background:#edf2f9;color:#6789be;box-shadow:none!important;border-radius:999px;padding:5px 15px;}
+.rail{border-color:#e6edf5;}
+.rail-item.on{color:#314f75;}
+.navbtn{background:#f2f5fa;box-shadow:none;border:1px solid #e1e9f3;}
+.navbtn.next{background:#6789be;border-color:#6789be;}
+.navbtn.next span{border-color:white;}
+.step .out,.cstep .det{border-top-color:rgba(103,137,190,.16);}
+.step.ai{background:linear-gradient(180deg,#f7f9fc,#f0f5fb);}
+.cstep{background:rgba(103,137,190,.06);}.cstep:hover{background:rgba(103,137,190,.1);}
+.cstep .idx,.ritem .rn{background:rgba(103,137,190,.15);}
+.track,.track.tnew{background:#fcfdff;box-shadow:0 8px 24px -14px rgba(55,83,116,.13);}
+.track .cstep{background:#f2f5fa;}
+.track .cstep:hover{background:#eaf0f7;}
+.track .cstep.on{background:#edf3fb;}
+.sec-no{box-shadow:0 5px 14px -4px rgba(73,108,151,.28);}
+.badge-ai,.skill .tag,.bar-new{box-shadow:none;}
+.bar .fill{background:linear-gradient(90deg,var(--deco-red) 0 10%,var(--deco-yellow) 10% 24%,var(--brand-600) 24%);}
+/* Live characters, no background image. */
+.slide.cover{background:transparent;}
+.ascii-canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:0;transform-origin:1430px 530px;transform:translate(310px,440px) scale(1.65);opacity:.24;transition:transform 1.25s cubic-bezier(.22,1,.36,1),opacity 1.05s ease;will-change:transform,opacity;}
+.stage.on-cover .ascii-canvas{transform:translate(0,0) scale(1);opacity:1;}
+@media(prefers-reduced-motion:reduce){.ascii-canvas{transition:none;}}
+.cover .inner{padding-bottom:38px;}
+.cover-kicker{display:flex;align-items:center;gap:14px;margin-bottom:36px;font-size:16px;letter-spacing:.2em;color:#66809d;}
+.cover-kicker i{width:9px;height:9px;border-radius:50%;background:var(--deco-yellow);box-shadow:0 0 0 5px #f2ff352d;}
+.cover h1{font-size:104px;font-weight:650;letter-spacing:-.045em;line-height:1.18;color:#20364d;}
+.cover h1 .hero-en{display:block;font-family:'Segoe UI',Arial,sans-serif;font-weight:700;letter-spacing:-.055em;font-size:144px;line-height:1;margin-bottom:16px;}
+.cover h1 em{font-style:normal;color:#6789be;}
+.cover .lead{font-size:32px;color:#4c6681;letter-spacing:.055em;}
+.cover .sign{margin-top:30px;background:#f2f5fa;border:1px solid #e3eaf3;box-shadow:0 6px 18px -14px #6789be;padding:10px 24px;font-size:20px;letter-spacing:.1em;color:#516b86;font-weight:500;}
+.cover .swatch{position:absolute;left:0;bottom:64px;gap:8px;}
+.cover .swatch i{width:42px;height:6px;}
+.cover .hint{position:absolute;bottom:0;left:0;font-size:16px;color:#6d8399;}
+.on-cover .rail{border-color:rgba(103,137,190,.13);}
+.on-cover .rail-item.on .dot{background:var(--deco-red);}
+.cover h1 .title-bracket{font-weight:300;}
+
+/* Cover poster composition: large offset type and angled speech labels. */
+.rail{transition:opacity .35s ease,transform .5s ease,visibility .35s;}
+.stage.on-cover .rail{opacity:0;visibility:hidden;pointer-events:none;transform:translateX(-24px);}
+.slide.cover{padding:70px 100px 74px 110px;}
+.cover .inner.poster-cover{max-width:none;padding:0;display:block;}
+.poster-cover .cover-kicker{position:absolute;top:0;left:0;margin:0;font-size:17px;letter-spacing:.19em;color:rgba(255,255,255,.88);}
+.poster-cover .lead{position:absolute;left:50%;top:132px;display:flex;align-items:center;justify-content:center;width:720px;padding:17px 30px;border-radius:9px;background:#2f65d7;color:#fff;font-size:29px;letter-spacing:.06em;transform:translateX(-50%) rotate(-4deg);transform-origin:center;box-shadow:0 8px 24px #194da84d;}
+.poster-cover .lead span{position:absolute;right:30px;font-size:36px;font-family:Arial,sans-serif;}
+.poster-title{position:absolute;left:50%;top:241px;width:900px;padding:24px 40px 38px;border-radius:28px;background:rgba(255,255,255,.95);border:1px solid #e5ebf3;box-shadow:0 18px 52px -26px #6789be55;transform:translateX(-50%) rotate(-5deg);transform-origin:center;}
+.poster-title::after{content:'';position:absolute;bottom:-34px;left:116px;width:0;height:0;border-left:0 solid transparent;border-right:48px solid transparent;border-top:35px solid #fff;}
+.cover .poster-title h1{margin:0;font-family:'Microsoft YaHei','PingFang SC',sans-serif;font-weight:900;font-size:174px;line-height:1.03;letter-spacing:-.065em;text-align:center;}
+.poster-line{display:block;white-space:nowrap;color:#3677ef;}
+.poster-line:not(.second){display:flex;align-items:baseline;justify-content:flex-start;gap:14px;letter-spacing:0;padding-left:74px;}
+.cover .poster-title .hero-en{display:inline;font-family:'Segoe UI',Arial,sans-serif;font-size:198px;font-weight:700;letter-spacing:-.055em;margin:0;line-height:1;}
+.cover .poster-title .title-bracket{display:inline-block;flex:0 0 .5em;width:.5em;font-weight:300;font-size:.82em;letter-spacing:0;line-height:1;transform:translateY(-8px);}
+.cover .poster-title .title-bracket:first-of-type{ text-indent:-.5em; }
+.cover .poster-title .hero-en + .title-bracket{text-indent:-.5em;}
+.poster-line.second{margin-top:10px;padding-left:214px;color:#192b40;text-align:left;}
+.cover .poster-line.second em{color:inherit;font-style:normal;}
+.poster-spark{position:absolute;right:28px;top:24px;font-size:44px;color:#eb4425;}
+.poster-cover .sign{position:absolute;left:50%;top:756px;margin:0;padding:12px 28px;display:flex;align-items:center;gap:24px;border:0;border-radius:8px;background:#f2ff35;color:#253b55;transform:translateX(-50%) rotate(2deg);transform-origin:center;font-size:23px;font-weight:600;box-shadow:none;}
+.poster-cover .sign span{font-family:'Segoe UI',sans-serif;font-size:12px;letter-spacing:.1em;font-weight:500;}
+.poster-cover .hint{bottom:0;font-size:16px;color:rgba(255,255,255,.88);}
+.poster-cover .swatch{left:auto;right:0;bottom:4px;margin:0;}
+@media(prefers-reduced-motion:reduce){.rail{transition:none;}}
+
+/* Keep the label composition on the left of the existing animated moon. */
+.poster-cover .cover-kicker{color:#66809d;}
+.poster-cover .lead{left:102px;background:#4d87f1;transform:rotate(-4deg);box-shadow:0 8px 24px #4d87f133;}
+.poster-title{left:12px;transform:rotate(-5deg);}
+.poster-cover .sign{left:262px;transform:rotate(2deg);}
+.poster-cover .hint{color:#6d8399;}
+
+</style>
+</head>
+<body>
+
+<div class="stage on-cover" id="stage">
+    <canvas class="ascii-canvas" id="asciiBackground" aria-hidden="true"></canvas>
+
+  <nav class="rail" id="rail" aria-label="章节导航">
+    <div class="rail-item on" data-go="0" tabindex="0" role="button"><span class="dot"></span>封面</div>
+    <div class="rail-item" data-go="1" tabindex="0" role="button"><span class="dot"></span>01 以前怎么干</div>
+    <div class="rail-item" data-go="2" tabindex="0" role="button"><span class="dot"></span>02 现在怎么干</div>
+    <div class="rail-item" data-go="3" tabindex="0" role="button"><span class="dot"></span>03 过程实录</div>
+    <div class="rail-item" data-go="4" tabindex="0" role="button"><span class="dot"></span>04 差在哪</div>
+    <div class="rail-item" data-go="5" tabindex="0" role="button"><span class="dot"></span>05 两个 skill</div>
+    <div class="rail-item" data-go="6" tabindex="0" role="button"><span class="dot"></span>06 怎么开始</div>
+  </nav>
+
+  <section class="slide cover active" aria-label="封面">
+    <div class="inner poster-cover">
+      <div class="cover-kicker"><i></i>AI-POWERED DESIGN WORKFLOW</div>
+      <p class="lead">互动部 AI 程序全流程<span aria-hidden="true">↗</span></p>
+      <div class="poster-title">
+        <h1 aria-label="AI「码」上成型"><span class="poster-line"><span class="hero-en">AI</span><span class="title-bracket">「</span>码<span class="title-bracket">」</span></span><span class="poster-line second">上<em>成型</em></span></h1>
+        <span class="poster-spark" aria-hidden="true">✦</span>
+      </div>
+      <p class="sign">UI 视觉设计组<span>DESIGN TO DELIVERY</span></p>
+      <p class="hint">用键盘 ← → 或右下角箭头翻页</p>
+      <div class="swatch" aria-hidden="true"><i></i><i></i><i></i></div>
+    </div>
+  </section>
+
+  <section class="slide" aria-label="01 以前是这么干的">
+    <div class="inner">
+      <span class="sec-no">01</span>
+      <h2>以前是这么干的</h2>
+      <p class="sub">接到策划案，找参考定风格，然后一页一页把内页补齐，交给甲方确认，最后切图给程序。设计侧的交付，到切图为止。</p>
+
+      <div class="zone">
+        <div class="steps col5">
+          <div class="step">
+            <div class="no">STEP 01</div><h3>接到策划案</h3>
+            <div class="io">对接沟通，把需求聊清楚</div>
+            <div class="out">产出 · 需求理解</div>
+          </div>
+          <div class="step">
+            <div class="no">STEP 02</div><h3>找参考、定风格页</h3>
+            <div class="io">找设计参考，定下风格页（已用 AI 辅助生图）</div>
+            <div class="out">产出 · 风格页</div>
+          </div>
+          <div class="step">
+            <div class="no">STEP 03</div><h3>补完内页</h3>
+            <div class="io">照着策划案逐页补齐内页</div>
+            <div class="out">产出 · 完整设计稿</div>
+          </div>
+          <div class="step">
+            <div class="no">STEP 04</div><h3>甲方确定</h3>
+            <div class="io">提交甲方确认，来回改稿</div>
+            <div class="out">产出 · 定稿</div>
+          </div>
+          <div class="step">
+            <div class="no">STEP 05</div><h3>切图给程序</h3>
+            <div class="io">切图标注，交给程序制作</div>
+            <div class="out">产出 · 切图包</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="slide alt" aria-label="02 现在是这么干的">
+    <div class="inner">
+      <span class="sec-no">02</span>
+      <h2>现在是这么干的</h2>
+      <p class="sub">同样一叠策划案进去，出来的直接是能点的界面。点击下面任意一步，看它产出什么。</p>
+
+      <div class="zone">
+        <div class="steps col7" id="stepRow">
+          <div class="step ai pick sel" data-m="m1" tabindex="0" role="button">
+            <div class="no">STEP 01</div><h3>接到策划案</h3>
+            <div class="io">策划案（规范）＋ 素材图包 ＋ 策划 PDF</div>
+            <div class="out">标准化输入包</div>
+          </div>
+          <div class="step ai pick" data-m="m2" tabindex="0" role="button">
+            <div class="no">STEP 02</div><h3>找风格参考</h3>
+            <div class="io">找 1–2 张，含点击框 / UI 风格 / 页面风格</div>
+            <div class="out">风格锚点</div>
+          </div>
+          <div class="step ai pick" data-m="m3" tabindex="0" role="button">
+            <span class="badge-ai">AI</span>
+            <div class="no">STEP 03</div><h3>写提示词</h3>
+            <div class="io">调用 UI/UX Pro Max，转成结构化提示词</div>
+            <div class="out">提示词</div>
+          </div>
+          <div class="step ai pick" data-m="m4" tabindex="0" role="button">
+            <span class="badge-ai">AI</span>
+            <div class="no">STEP 04</div><h3>直接生成界面</h3>
+            <div class="io">AI 直出可交互 HTML 界面，对话微调</div>
+            <div class="out">可交互 HTML</div>
+          </div>
+          <div class="step ai pick" data-m="m5" tabindex="0" role="button">
+            <div class="no">STEP 05</div><h3>给甲方定稿</h3>
+            <div class="io">提交甲方确认，定的是能点开的东西</div>
+            <div class="out">定稿界面</div>
+          </div>
+          <div class="step ai pick" data-m="m6" tabindex="0" role="button">
+            <span class="badge-ai">AI</span>
+            <div class="no">STEP 06</div><h3>制作现场程序</h3>
+            <div class="io">调用 html-to-unity，把定稿 HTML 转成 Unity 界面</div>
+            <div class="out">Unity 程序</div>
+          </div>
+          <div class="step ai pick" data-m="m7" tabindex="0" role="button">
+            <div class="no">STEP 07</div><h3>推送 git 库</h3>
+            <div class="io">推送 git 仓库，即发包给现场</div>
+            <div class="out">发包完成</div>
+          </div>
+        </div>
+
+        <div class="media" id="mediaBox">
+          <div class="mi on" data-m="m1">
+            <div class="note">
+              <div class="ttl">这一步在做的事</div>
+              <div class="tx">把策划案、素材图包和策划 PDF 收齐，整理成一份<strong>格式规范的输入包</strong>。<br>
+              和三张图一起交给 AI 的，是"要做成什么样"这件事本身——这一步做得越干净，后面每一步越省事。</div>
+            </div>
+          </div>
+          <div class="mi" data-m="m2">
+            <figure><div class="frame ph-md"><img src="data:image/png;base64,@@BASE64_STRIPPED@@" alt="参考风格图"></div><figcaption>参考风格图 · 找出可复用的「风格锚点」</figcaption></figure>
+          </div>
+          <div class="mi" data-m="m3">
+            <div class="note">
+              <div class="ttl">这一步在做的事</div>
+              <div class="tx">把参考图里的信息，翻译成 AI 能执行的结构化描述——页面结构、配色、字体层级、组件样式、点击框位置。<br>
+              这一步决定后面产出的稳定性：<strong>提示词写得越具体，生成的界面越接近目标</strong>，返工越少。</div>
+            </div>
+          </div>
+          <div class="mi" data-m="m4">
+            <div class="rowimg">
+              <figure><div class="frame ph-md"><img src="data:image/png;base64,@@BASE64_STRIPPED@@" alt="成品界面 万家灯火南网情深"></div><figcaption>万家灯火 南网情深</figcaption></figure>
+              <figure><div class="frame ph-md"><img src="data:image/png;base64,@@BASE64_STRIPPED@@" alt="成品界面 品牌强国品牌强企"></div><figcaption>品牌强国 · 品牌强企</figcaption></figure>
+            </div>
+          </div>
+          <div class="mi" data-m="m5"><figure><div class="frame ph-md"><img src="data:image/jpeg;base64,@@BASE64_STRIPPED@@" alt="甲方确认界面：品牌强国·品牌强企"></div><figcaption>甲方确认 · 品牌强国·品牌强企</figcaption></figure></div>
+          <div class="mi" data-m="m6">
+            <figure><div class="frame ph-lg"><img src="data:image/png;base64,@@BASE64_STRIPPED@@" alt="Unity 编辑器中的 UI Toolkit 工程"></div><figcaption>html-to-unity 转出的 Unity 界面，在设计侧直接生成现场程序</figcaption></figure>
+          </div>
+          <div class="mi" data-m="m7">
+            <div class="note">
+              <div class="ttl">这一步做完，设计侧的交付就结束了</div>
+              <div class="tx">程序推送到 git 仓库，等于直接发包给现场。<br>
+              这一段原来属于程序的工作，现在由设计侧一路走到底——<strong>中间不再有「切图交接」这个环节</strong>。</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="slide alt" aria-label="03 过程实录">
+    <div class="inner">
+      <span class="sec-no">03</span>
+      <h2>过程实录</h2>
+      <p class="sub">点左边任意一步，右边就是这一步的实际截图。前四步用 UI/UX Pro Max，后三步用 html-to-unity。</p>
+
+      <div class="zone">
+        <div class="recl">
+          <div class="rlist" id="recList">
+            <div class="ritem on" data-r="r1" tabindex="0" role="button"><span class="rn">01</span><h4>接到策划案</h4></div>
+            <div class="ritem" data-r="r2" tabindex="0" role="button"><span class="rn">02</span><h4>找 1–2 张风格参考</h4></div>
+            <div class="ritem" data-r="r3" tabindex="0" role="button"><span class="rn">03</span><h4>写提示词</h4></div>
+            <div class="ritem" data-r="r4" tabindex="0" role="button"><span class="rn">04</span><h4>直出可交互界面</h4></div>
+            <div class="ritem" data-r="r5" tabindex="0" role="button"><span class="rn">05</span><h4>甲方定稿</h4></div>
+            <div class="ritem" data-r="r6" tabindex="0" role="button"><span class="rn">06</span><h4>转 Unity 界面</h4></div>
+            <div class="ritem" data-r="r7" tabindex="0" role="button"><span class="rn">07</span><h4>推送 git 发包</h4></div>
+          </div>
+          <div class="rstage" id="recMedia">
+            <div class="rmi on" data-r="r1"><div class="rgrid t5">
+              <div class="cell span2"><img src="data:image/png;base64,@@BASE64_STRIPPED@@" alt="策划案与资料整理文件夹"></div>
+              <div class="cell"><img src="data:image/jpeg;base64,@@BASE64_STRIPPED@@" alt="策划案原始 01 万家灯火"></div>
+              <div class="cell"><img src="data:image/jpeg;base64,@@BASE64_STRIPPED@@" alt="策划案原始 02 品牌强国"></div>
+              <div class="cell"><img src="data:image/jpeg;base64,@@BASE64_STRIPPED@@" alt="策划案原始 03 企业文化理念"></div>
+              <div class="cell"><img src="data:image/jpeg;base64,@@BASE64_STRIPPED@@" alt="策划案原始 04 产品品牌"></div>
+            </div><p class="rmcap">收齐三样输入：规范格式的策划案、素材图包、策划 PDF。</p></div>
+            <div class="rmi" data-r="r2"><div class="rframe auto"><img src="data:image/png;base64,@@BASE64_STRIPPED@@" alt="风格参考图 · 追光储能"></div><p class="rmcap">标出点击框、UI 风格、页面风格，作为可直接喂给 AI 的风格锚点。</p></div>
+            <div class="rmi" data-r="r3"><div class="rframe auto"><img src="data:image/png;base64,@@BASE64_STRIPPED@@" alt="实际写给 AI 的那段提示词"></div><p class="rmcap"><strong>UI/UX Pro Max</strong>：把风格参考和策划案转成结构化提示词。</p></div>
+            <div class="rmi" data-r="r4"><div class="rgrid">
+              <div class="cell"><img src="data:image/png;base64,@@BASE64_STRIPPED@@" alt="直出界面 产品品牌"></div>
+              <div class="cell"><img src="data:image/png;base64,@@BASE64_STRIPPED@@" alt="直出界面 企业文化理念"></div>
+              <div class="cell"><img src="data:image/png;base64,@@BASE64_STRIPPED@@" alt="直出界面 品牌强国品牌强企"></div>
+              <div class="cell"><img src="data:image/png;base64,@@BASE64_STRIPPED@@" alt="直出界面 万家灯火南网情深"></div>
+            </div><p class="rmcap"><strong>UI/UX Pro Max</strong>：一次直出四页可交互界面，之后靠对话微调到达标。</p></div>
+            <div class="rmi" data-r="r5"><div class="rframe fit"><img src="data:image/jpeg;base64,@@BASE64_STRIPPED@@" alt="甲方确认界面：品牌强国·品牌强企"></div><p class="rmcap">甲方看到的是能点开的界面，不是效果图，改稿来回明显减少。</p></div>
+            <div class="rmi" data-r="r6"><div class="rframe fit"><img src="data:image/png;base64,@@BASE64_STRIPPED@@" alt="调用 html-to-unity 把定稿 HTML 转成 Unity 工程"></div><p class="rmcap"><strong>html-to-unity</strong>：把定稿 HTML 1:1 还原成 Unity 界面。</p></div>
+            <div class="rmi" data-r="r7"><div class="rframe fit"><img src="data:image/png;base64,@@BASE64_STRIPPED@@" alt="推送 git 仓库完成，远端 main 已收到"></div><p class="rmcap">推送仓库即发包给现场，设计侧交付完成。</p></div>
+          </div>
+        </div>
+
+        <p class="takeaway">中间没有交接环节——甲方定稿的那份 HTML，原样就是转 Unity 的输入。</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="slide" aria-label="04 差在哪">
+    <div class="inner">
+      <span class="sec-no">04</span>
+      <h2>差在哪</h2>
+      <p class="sub">同一个任务，两条路。点击任意步骤展开它要做什么。</p>
+
+      <div class="zone">
+        <div class="scale">
+          <span class="lab">时间长度</span>
+          <span class="bar2 bar-old"></span><span>旧流程 · 3 天</span>
+          <span class="bar2 bar-new"></span><span>新流程 · 半天</span>
+          <span style="color:var(--text-faint);">（同比例尺）</span>
+        </div>
+
+        <div class="tracks">
+          <div class="track">
+            <div class="track-h"><h3>旧流程</h3><span class="t">5 步 · 约 3 天</span></div>
+            <div class="cstep" tabindex="0" role="button">
+              <div class="row"><span class="idx">1</span><span class="nm">接到策划案</span><span class="dur">对接沟通</span></div>
+              <div class="det">口头 + 文档对接，产出一份「理解」。</div>
+            </div>
+            <div class="cstep" tabindex="0" role="button">
+              <div class="row"><span class="idx">2</span><span class="nm">找参考、定风格页</span><span class="dur">偏慢</span></div>
+              <div class="det">已用 AI 辅助生图，但产出物仍是「给人看的参考」。</div>
+            </div>
+            <div class="cstep" tabindex="0" role="button">
+              <div class="row"><span class="idx">3</span><span class="nm">补完内页</span><span class="dur">最耗时</span></div>
+              <div class="det">照着策划案一页页补齐。风格定完之后基本是重复执行，却占掉大头时间。</div>
+            </div>
+            <div class="cstep" tabindex="0" role="button">
+              <div class="row"><span class="idx">4</span><span class="nm">甲方确定</span><span class="dur">来回改</span></div>
+              <div class="det">提交静态设计稿确认，甲方看不到最终效果，容易来回改稿。</div>
+            </div>
+            <div class="cstep" tabindex="0" role="button">
+              <div class="row"><span class="idx">5</span><span class="nm">切图给程序</span><span class="dur">交付终点</span></div>
+              <div class="det">切图标注后交给程序，设计侧交付到此为止。</div>
+            </div>
+            <div class="mile">终点：切图包</div>
+          </div>
+
+          <div class="track tnew">
+            <div class="track-h"><h3>新流程</h3><span class="t">7 步 · 约半天</span></div>
+            <div class="cstep" tabindex="0" role="button">
+              <div class="row"><span class="idx">1</span><span class="nm">接到策划案</span><span class="dur">规范化</span></div>
+              <div class="det">收齐三样：规范格式的策划案、素材图包、策划 PDF。输入标准化，是 AI 接得住的前提。</div>
+            </div>
+            <div class="cstep" tabindex="0" role="button">
+              <div class="row"><span class="idx">2</span><span class="nm">找风格参考</span><span class="dur">1–2 张</span></div>
+              <div class="det">标注点击框、UI 风格、页面风格。参考从「给人看」变成「能喂给 AI 的锚点」。</div>
+            </div>
+            <div class="cstep" tabindex="0" role="button">
+              <div class="row"><span class="idx">3</span><span class="nm">写提示词</span><span class="dur">AI 介入</span></div>
+              <div class="det">调用 UI/UX Pro Max 转成结构化提示词，这一步决定产出质量的稳定性。</div>
+            </div>
+            <div class="cstep" tabindex="0" role="button">
+              <div class="row"><span class="idx">4</span><span class="nm">直接生成界面</span><span class="dur">AI 直出</span></div>
+              <div class="det">直出可交互 HTML，一次成型，之后靠对话微调。产出物从静态稿变成能点的成品。</div>
+            </div>
+            <div class="cstep" tabindex="0" role="button">
+              <div class="row"><span class="idx">5</span><span class="nm">给甲方定稿</span><span class="dur">所见即所得</span></div>
+              <div class="det">甲方看到的是能点的界面，不是效果图，改稿来回明显减少。</div>
+            </div>
+            <div class="cstep" tabindex="0" role="button">
+              <div class="row"><span class="idx">6</span><span class="nm">制作现场程序</span><span class="dur">AI 介入 · 新增</span></div>
+              <div class="det">html-to-unity，把定稿 HTML 转成 Unity 界面。这一步原来是程序的活。</div>
+            </div>
+            <div class="cstep" tabindex="0" role="button">
+              <div class="row"><span class="idx">7</span><span class="nm">推送 git 库</span><span class="dur">发包 · 新增</span></div>
+              <div class="det">推送到 git 仓库，即发包给现场，设计侧直达交付终点。</div>
+            </div>
+            <div class="mile">终点：发包完成（原属程序环节）</div>
+          </div>
+        </div>
+
+        <p class="takeaway">新流程多出来的第 6、7 步，原本是程序的活——设计侧的交付终点从「切图」后移到了「发包」，中间不再有交接。</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="slide alt" aria-label="05 两个 skill">
+    <div class="inner">
+      <span class="sec-no">05</span>
+      <h2>整条链路只靠两个 skill</h2>
+      <p class="sub">流程看着有 7 步，真正需要新学的只有两个动作，其余步骤和以前一样。</p>
+
+      <div class="zone">
+        <div class="skills">
+          <div class="skill">
+            <span class="tag">SKILL 01</span>
+            <h3>UI/UX Pro Max</h3>
+            <p>把「风格参考 + 策划案」转成结构化提示词，直出可交互 HTML 界面。对应第 3–4 步。</p>
+            <ul>
+              <li>输入：风格参考图、规范化的策划案、素材图包</li>
+              <li>动作：写提示词 → 生成界面 → 对话微调</li>
+              <li>产出：可交互 HTML 界面</li>
+            </ul>
+          </div>
+          <div class="skill">
+            <span class="tag">SKILL 02</span>
+            <h3>html-to-unity</h3>
+            <p>把定稿的 HTML 界面 1:1 转成 Unity 界面，省掉切图与还原对齐。对应第 6 步。</p>
+            <ul>
+              <li>输入：定稿的可交互 HTML</li>
+              <li>动作：转换 + 补全缺失组件</li>
+              <li>产出：Unity 程序（可直接推送 git）</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="slide" aria-label="06 怎么开始">
+    <div class="inner">
+      <span class="sec-no">06</span>
+      <h2>怎么开始</h2>
+      <p class="sub">不用背整条流程，照着这 4 步走就行。</p>
+
+      <div class="zone">
+        <div class="guide">
+          <div class="gstep">
+            <span class="gn">1</span>
+            <div class="gb">
+              <h3>先找 1–2 张风格参考</h3>
+              <p>标出点击框、UI 风格、页面风格，把它变成能直接喂给 AI 的风格锚点。</p>
+            </div>
+            <span class="who">对应 STEP 02</span>
+          </div>
+          <div class="gstep">
+            <span class="gn">2</span>
+            <div class="gb">
+              <h3>把输入交给 UI/UX Pro Max</h3>
+              <p>风格参考 ＋ 策划案 ＋ 素材图包一起给进去，转成结构化提示词后直出可交互 HTML。</p>
+            </div>
+            <span class="who">对应 STEP 03–04</span>
+          </div>
+          <div class="gstep">
+            <span class="gn">3</span>
+            <div class="gb">
+              <h3>对话微调，交甲方定稿</h3>
+              <p>甲方看到的是能点开的界面，不是效果图，改稿来回明显减少。</p>
+            </div>
+            <span class="who">对应 STEP 05</span>
+          </div>
+          <div class="gstep">
+            <span class="gn">4</span>
+            <div class="gb">
+              <h3>交给 html-to-unity 并推送 git</h3>
+              <p>生成 Unity UI Toolkit 程序后推仓库，等于直接发包给现场，设计侧交付完成。</p>
+            </div>
+            <span class="who">对应 STEP 06–07</span>
+          </div>
+        </div>
+
+        <p class="takeaway">前面两步做扎实，后面两步基本只是对话微调。</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="bar"><div class="fill" id="fill"></div></div>
+  <div class="pager">
+    <span class="n" id="prog">1 / 7</span>
+    <div class="navbtn prev" id="prev" tabindex="0" role="button" aria-label="上一页"><span></span></div>
+    <div class="navbtn next" id="next" tabindex="0" role="button" aria-label="下一页"><span></span></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var stage=document.getElementById('stage');
+  var slides=Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var railItems=Array.prototype.slice.call(document.querySelectorAll('.rail-item'));
+  var fill=document.getElementById('fill');
+  var prog=document.getElementById('prog');
+  var prev=document.getElementById('prev');
+  var next=document.getElementById('next');
+  var cur=0;
+
+  var raw = location.search.indexOf('raw') > -1;
+  if(location.search.indexOf('still')>-1){ stage.classList.add('still'); }
+  if(raw){
+    /* 导出模式：舞台 1:1 贴左上角，不做缩放，便于精确出图 */
+    stage.style.setProperty('--k', 1);
+    stage.style.left = '0';
+    stage.style.top = '0';
+    stage.style.transform = 'none';
+    stage.style.boxShadow = 'none';
+  }
+
+  function fit(){
+    if(raw) return;
+    var k=Math.min(window.innerWidth/1920, window.innerHeight/1080);
+    stage.style.setProperty('--k', k);
+  }
+  window.addEventListener('resize',fit);
+  fit();
+
+  function go(i){
+    cur=Math.max(0,Math.min(slides.length-1,i));
+    slides.forEach(function(s,k){ s.classList.toggle('active',k===cur); });
+    railItems.forEach(function(r,k){ r.classList.toggle('on',k===cur); });
+    stage.classList.toggle('on-cover',cur===0);
+    prog.textContent=(cur+1)+' / '+slides.length;
+    fill.style.width=((cur+1)/slides.length*100)+'%';
+    prev.setAttribute('aria-disabled',cur===0?'true':'false');
+    next.setAttribute('aria-disabled',cur===slides.length-1?'true':'false');
+  }
+
+  function bindActivate(el,fn){
+    el.addEventListener('click',fn);
+    el.addEventListener('keydown',function(e){
+      if(e.key==='Enter'||e.key===' '){ e.preventDefault(); fn(); }
+    });
+  }
+
+  bindActivate(prev,function(){ go(cur-1); });
+  bindActivate(next,function(){ go(cur+1); });
+  railItems.forEach(function(r){
+    bindActivate(r,function(){ go(parseInt(r.getAttribute('data-go'),10)); });
+  });
+
+  document.addEventListener('keydown',function(e){
+    var tag=(e.target.tagName||'').toLowerCase();
+    if(tag==='input'||tag==='textarea') return;
+    if(e.key==='ArrowRight'||e.key==='PageDown'){ e.preventDefault(); go(cur+1); }
+    else if(e.key==='ArrowLeft'||e.key==='PageUp'){ e.preventDefault(); go(cur-1); }
+    else if(e.key==='Home'){ e.preventDefault(); go(0); }
+    else if(e.key==='End'){ e.preventDefault(); go(slides.length-1); }
+  });
+
+  var tx0=null;
+  document.addEventListener('touchstart',function(e){ tx0=e.changedTouches[0].clientX; });
+  document.addEventListener('touchend',function(e){
+    if(tx0===null) return;
+    var dx=e.changedTouches[0].clientX-tx0;
+    if(Math.abs(dx)>60){ go(dx<0?cur+1:cur-1); }
+    tx0=null;
+  });
+
+  var stepRow=document.getElementById('stepRow');
+  if(stepRow){
+    var steps=Array.prototype.slice.call(stepRow.querySelectorAll('.step'));
+    var mis=Array.prototype.slice.call(document.querySelectorAll('#mediaBox .mi'));
+    var pick=function(s){
+      var m=s.getAttribute('data-m');
+      steps.forEach(function(o){ o.classList.toggle('sel',o===s); });
+      mis.forEach(function(o){ o.classList.toggle('on',o.getAttribute('data-m')===m); });
+    };
+    steps.forEach(function(s){ bindActivate(s,function(){ pick(s); }); });
+  }
+
+  var recList=document.getElementById('recList');
+  if(recList){
+    var ritems=Array.prototype.slice.call(recList.querySelectorAll('.ritem'));
+    var rmis=Array.prototype.slice.call(document.querySelectorAll('#recMedia .rmi'));
+    var rpick=function(s){
+      var m=s.getAttribute('data-r');
+      ritems.forEach(function(o){ o.classList.toggle('on',o===s); });
+      rmis.forEach(function(o){ o.classList.toggle('on',o.getAttribute('data-r')===m); });
+    };
+    ritems.forEach(function(s){ bindActivate(s,function(){ rpick(s); }); });
+  }
+
+  var csteps=Array.prototype.slice.call(document.querySelectorAll('.cstep'));
+  csteps.forEach(function(el){
+    bindActivate(el,function(){
+      var was=el.classList.contains('on');
+      csteps.forEach(function(o){ o.classList.remove('on'); });
+      if(!was){ el.classList.add('on'); }
+    });
+  });
+
+  var h=parseInt((location.hash||'').replace('#',''),10);
+  go(isNaN(h)?0:Math.max(0,Math.min(slides.length-1,h)));
+})();
+</script>
+<script>
+(function(){
+ 'use strict';
+ var canvas=document.getElementById('asciiBackground');
+ if(!canvas)return;
+ var ctx=canvas.getContext('2d');if(!ctx)return;
+ var stage=document.getElementById('stage');
+ var reduced=window.matchMedia('(prefers-reduced-motion: reduce)');
+ var frame=0,last=0,time=0,W=1920,H=1080;
+ canvas.width=W;canvas.height=H;
+ // A procedural lunar surface rotates in 3D beneath a fixed ASCII sampling grid.
+ // No photographs, image textures, network requests, or pre-rendered frames.
+ var mw=384,mh=192,map=new Float32Array(mw*mh),craters=[],seed=719;
+ function random(){seed=(seed*16807)%2147483647;return(seed-1)/2147483646;}
+ for(var k=0;k<105;k++){
+  var lon=random()*Math.PI*2,lat=Math.asin(random()*2-1),cl=Math.cos(lat);
+  craters.push({x:Math.sin(lon)*cl,y:Math.sin(lat),z:Math.cos(lon)*cl,r:.018+Math.pow(random(),2)*.15});
+ }
+ function clamp(n,a,b){return Math.max(a,Math.min(b,n));}
+ for(var j=0;j<mh;j++)for(var i=0;i<mw;i++){
+  var la=(j/(mh-1)-.5)*Math.PI,lo=i/mw*Math.PI*2;
+  var x=Math.sin(lo)*Math.cos(la),y=Math.sin(la),z=Math.cos(lo)*Math.cos(la);
+  var terrain=.64+.12*Math.sin(x*9+y*5+z*3)*Math.cos(z*8-y*4)+.07*Math.sin(x*23+z*18)*Math.cos(y*19-z*7);
+  // Broad darker maria and small impact-crater bowls/rims.
+  terrain-=.21*Math.pow(Math.max(0,Math.sin(lo*3+.4)*Math.cos(la*4-.3)),3);
+  for(var c=0;c<craters.length;c++){
+   var cr=craters[c],dist=Math.sqrt((x-cr.x)*(x-cr.x)+(y-cr.y)*(y-cr.y)+(z-cr.z)*(z-cr.z))/cr.r;
+   if(dist<1.35){terrain-=.23*Math.exp(-dist*dist*3);terrain+=.19*Math.exp(-Math.pow((dist-.92)*7,2));}
+  }
+  map[j*mw+i]=clamp(terrain,.15,.95);
+ }
+ var points=[],cx=1430,cy=530,radius=370;
+ for(var py=cy-radius;py<=cy+radius;py+=13)for(var px=cx-radius;px<=cx+radius;px+=8){
+  var nx=(px-cx)/radius,ny=(py-cy)/radius,s=nx*nx+ny*ny;
+  if(s<1)points.push({px:px,py:py,x:nx,y:ny,z:Math.sqrt(1-s)});
+ }
+ // Mixed-width visual densities within a monospaced grid, like a text-rendered moon.
+ var glyphGroups=['.,:;-','|!(){}[]/','irtfjlcxv','zXYUJLCZO02','aqpbdwmQ08','MWB%#@&'];
+ function draw(t){
+  ctx.clearRect(0,0,W,H);ctx.font='600 13px Consolas, "Courier New", monospace';ctx.textAlign='center';ctx.textBaseline='middle';
+  var angle=t*.105,co=Math.cos(angle),si=Math.sin(angle);
+  for(var p=0;p<points.length;p++){
+   var q=points[p],rx=q.x*co+q.z*si,rz=-q.x*si+q.z*co;
+   var lon=Math.atan2(rx,rz);if(lon<0)lon+=Math.PI*2;
+   var ix=Math.floor(lon/(Math.PI*2)*mw)%mw,iy=Math.round((Math.asin(q.y)/Math.PI+.5)*(mh-1));
+   var surface=map[iy*mw+ix];
+   var light=clamp(-q.x*.42-q.y*.28+q.z*.82,.05,1);
+   var ink=clamp((1-surface)*1.45+light*.38-.15,.06,.99);
+   var edge=clamp(q.z*7,0,1),alpha=clamp(.35+ink*.62,0,.97)*edge;
+   // Ice-blue highlights and deeper blue maria create clear tonal separation on white.
+   var tone=clamp((surface*.82+light*.62-.43)/.46,0,1);
+   var highlight=tone*tone*(3-2*tone);
+   var red=Math.round(60+highlight*149),green=Math.round(101+highlight*123),blue=Math.round(161+highlight*80);
+   ctx.fillStyle='rgba('+red+','+green+','+blue+','+alpha.toFixed(3)+')';
+   var group=glyphGroups[clamp(Math.floor(ink*glyphGroups.length),0,glyphGroups.length-1)];
+   // Selection is bound to the rotating surface, not random flicker per frame.
+   var variant=(Math.floor(ix/3)*73+Math.floor(iy/2)*37)%group.length;
+   ctx.fillText(group[variant],q.px,q.py);
+  }
+ }
+ // One persistent canvas moves between cover and inner-page backgrounds via CSS.
+ draw(0);
+ function active(){return !document.hidden;}
+ function tick(now){
+  frame=0;if(!active()||reduced.matches||stage.classList.contains('still')){last=0;return;}
+  if(!last)last=now;
+  if(now-last>=65){time+=Math.min(now-last,150)/1000;draw(time);last=now;}
+  frame=requestAnimationFrame(tick);
+ }
+ function sync(){
+  if(frame)cancelAnimationFrame(frame);frame=0;last=0;
+  if(active()){draw(time);if(!reduced.matches&&!stage.classList.contains('still'))frame=requestAnimationFrame(tick);}
+ }
+ new MutationObserver(sync).observe(stage,{attributes:true,attributeFilter:['class']});
+ document.addEventListener('visibilitychange',sync);
+ if(reduced.addEventListener)reduced.addEventListener('change',sync);else reduced.addListener(sync);
+ sync();
+})();
+
+</script>
+</body>
+</html>
